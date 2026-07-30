@@ -4,7 +4,7 @@
 
   Build (from the project root):
     python -m PyInstaller packaging\TeacherTimetableGenerator.spec (see packaging\README.md for full options)
-    wix build packaging\wix\Product.wxs -arch x64 -ext WixToolset.UI.wixext -o packaging\dist\TeacherTimetableGenerator.msi
+    wix build packaging\wix\Product.wxs -arch x64 -ext WixToolset.UI.wixext -o bin\TeacherTimetableGenerator.msi
 -->
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs" xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui">
   <Package
@@ -25,7 +25,7 @@
       <Directory Id="INSTALLFOLDER" Name="Teacher Timetable Generator">
         <Component Id="MainExecutable" Guid="0f2b5f3e-6a3a-4c7d-9b1a-7a1e5c2d9f10">
           <File Id="TeacherTimetableGeneratorEXE"
-                Source="packaging\dist\TeacherTimetableGenerator.exe"
+                Source="bin\TeacherTimetableGenerator.exe"
                 KeyPath="yes" />
         </Component>
       </Directory>

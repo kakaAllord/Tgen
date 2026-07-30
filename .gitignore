@@ -4,6 +4,7 @@ Output/
 tests/_test_output/
 build/
 dist/
+bin/
 *.msi
 *.wixobj
 *.wixpdb

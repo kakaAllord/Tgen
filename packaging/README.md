@@ -8,10 +8,10 @@ dependencies installed.
 
 ```
 pip install pyinstaller
-python -m PyInstaller packaging\TeacherTimetableGenerator.spec --distpath packaging\dist --workpath packaging\build --noconfirm
+python -m PyInstaller packaging\TeacherTimetableGenerator.spec --distpath bin --workpath packaging\build --noconfirm
 ```
 
-Produces `packaging\dist\TeacherTimetableGenerator.exe`.
+Produces `bin\TeacherTimetableGenerator.exe`.
 
 ## 2. Build the MSI installer (WiX Toolset v7)
 
@@ -19,7 +19,7 @@ Produces `packaging\dist\TeacherTimetableGenerator.exe`.
 dotnet tool install --global wix
 wix eula accept wix7
 wix extension add WixToolset.UI.wixext -g
-wix build packaging\wix\Product.wxs -arch x64 -ext WixToolset.UI.wixext -o packaging\dist\TeacherTimetableGenerator.msi
+wix build packaging\wix\Product.wxs -arch x64 -ext WixToolset.UI.wixext -o bin\TeacherTimetableGenerator.msi
 ```
 
 `packaging\wix\Product.wxs` must be built from the project root (source
