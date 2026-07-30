@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  MSI installer definition for Teacher Timetable Generator.
+
+  Build (from the project root):
+    python -m PyInstaller packaging\TeacherTimetableGenerator.spec (see packaging\README.md for full options)
+    wix build packaging\wix\Product.wxs -arch x64 -ext WixToolset.UI.wixext -o packaging\dist\TeacherTimetableGenerator.msi
+-->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs" xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui">
+  <Package
+      Name="Teacher Timetable Generator"
+      Manufacturer="Teacher Timetable Generator"
+      Version="1.0.0"
+      UpgradeCode="b063240e-d6df-4277-971b-4686a1ecd117"
+      Scope="perMachine"
+      Compressed="yes"
+      InstallerVersion="500">
+
+    <SummaryInformation Description="Teacher Timetable Generator Installer" Manufacturer="Teacher Timetable Generator" />
+
+    <MajorUpgrade DowngradeErrorMessage="A newer version of [ProductName] is already installed." />
+    <MediaTemplate EmbedCab="yes" />
+
+    <StandardDirectory Id="ProgramFiles64Folder">
+      <Directory Id="INSTALLFOLDER" Name="Teacher Timetable Generator">
+        <Component Id="MainExecutable" Guid="0f2b5f3e-6a3a-4c7d-9b1a-7a1e5c2d9f10">
+          <File Id="TeacherTimetableGeneratorEXE"
+                Source="packaging\dist\TeacherTimetableGenerator.exe"
+                KeyPath="yes" />
+        </Component>
+      </Directory>
+    </StandardDirectory>
+
+    <StandardDirectory Id="ProgramMenuFolder">
+      <Directory Id="ApplicationProgramsFolder" Name="Teacher Timetable Generator">
+        <Component Id="ApplicationShortcut" Guid="9e4b2c1a-8d3f-4e2b-a6c5-2f9d7b4e1a03">
+          <Shortcut Id="AppStartMenuShortcut"
+                    Name="Teacher Timetable Generator"
+                    Description="Generate teacher timetables from a master Excel workbook"
+                    Target="[#TeacherTimetableGeneratorEXE]"
+                    WorkingDirectory="INSTALLFOLDER" />
+          <RemoveFolder Id="CleanUpShortCut" On="uninstall" />
+          <RegistryValue Root="HKCU"
+                          Key="Software\TeacherTimetableGenerator"
+                          Name="installed"
+                          Type="integer"
+                          Value="1"
+                          KeyPath="yes" />
+        </Component>
+      </Directory>
+    </StandardDirectory>
+
+    <Feature Id="MainFeature" Title="Teacher Timetable Generator" Level="1">
+      <ComponentRef Id="MainExecutable" />
+      <ComponentRef Id="ApplicationShortcut" />
+    </Feature>
+
+    <ui:WixUI Id="WixUI_InstallDir" />
+    <WixVariable Id="WixUILicenseRtf" Value="packaging\wix\License.rtf" />
+  </Package>
+</Wix>
