@@ -27,31 +27,44 @@ logger = logging.getLogger(__name__)
 
 APP_VERSION = "1.0.0"
 
+#: Every export is nested under <chosen folder>/TimeTableGenerator/Output/...
+#: so the app's files are always self-contained in one clearly-named folder.
+OUTPUT_ROOT_DIR_NAME = "TimeTableGenerator"
+OUTPUT_SUBDIR_NAME = "Output"
+
 HELP_TEXT = """Getting Started
 
 1. Click "Select Master Excel..." and choose your timetable workbook
    (.xlsx or .xlsm). Every worksheet is read automatically; each
    worksheet is treated as one Level.
 
-2. Wait for the status bar to say "Loaded N lesson(s) across
+2. (Optional) Click "Select Output Folder..." to choose where generated
+   files are saved. If you skip this, they are saved next to your
+   workbook.
+
+3. Wait for the status bar to say "Loaded N lesson(s) across
    M teacher(s)." The teacher list on the left will fill in.
 
-3. Find a teacher:
+4. Find a teacher:
      - Type into "Search Teacher" to filter the list as you type.
      - Or just scroll and click a name in the list.
 
-4. Generate timetables:
+5. Generate timetables:
      - "Generate All" creates a PDF and an Excel file for every
        teacher found in the workbook.
      - Select one teacher, then click "Generate Selected Teacher"
        (or just double-click their name) to generate only that one.
 
-5. Click "Open Output Folder" to see the generated files.
+6. Click "Open Output Folder" to see the generated files.
 
 Where files are saved
 
-    <folder of your workbook>\\Output\\PDFs\\<Teacher Name>.pdf
-    <folder of your workbook>\\Output\\Excel\\<Teacher Name>.xlsx
+    <output folder>\\TimeTableGenerator\\Output\\PDFs\\<Teacher Name>.pdf
+    <output folder>\\TimeTableGenerator\\Output\\Excel\\<Teacher Name>.xlsx
+
+    The <output folder> is the one you pick with "Select Output
+    Folder...". If you never pick one, it defaults to the folder that
+    holds your workbook.
 
 Good to know
 
@@ -82,6 +95,7 @@ class TimetableApp:
         self.root.minsize(600, 480)
 
         self.master_path: Path | None = None
+        self.output_base_dir: Path | None = None
         self.output_dir: Path | None = None
         self.timetables: dict[str, TeacherTimetable] = {}
         self.all_teacher_names: list[str] = []
@@ -133,7 +147,7 @@ class TimetableApp:
         root_frame = ttk.Frame(self.root, padding=12)
         root_frame.pack(fill=tk.BOTH, expand=True)
         root_frame.columnconfigure(0, weight=1)
-        root_frame.rowconfigure(3, weight=1)
+        root_frame.rowconfigure(4, weight=1)
 
         # -- Master workbook selection -----------------------------------
         select_frame = ttk.Frame(root_frame)
@@ -150,9 +164,24 @@ class TimetableApp:
             row=0, column=1, sticky="w", padx=(10, 0)
         )
 
+        # -- Output folder selection ---------------------------------------
+        output_frame = ttk.Frame(root_frame)
+        output_frame.grid(row=1, column=0, sticky="ew", pady=(0, 8))
+        output_frame.columnconfigure(1, weight=1)
+
+        self.select_output_btn = ttk.Button(
+            output_frame, text="Select Output Folder...", command=self._on_select_output_dir
+        )
+        self.select_output_btn.grid(row=0, column=0, sticky="w")
+
+        self.output_label_var = tk.StringVar(value="Default: saved next to the workbook")
+        ttk.Label(output_frame, textvariable=self.output_label_var, foreground="#555555").grid(
+            row=0, column=1, sticky="w", padx=(10, 0)
+        )
+
         # -- Actions --------------------------------------------------------
         actions_frame = ttk.Frame(root_frame)
-        actions_frame.grid(row=1, column=0, sticky="ew", pady=(0, 8))
+        actions_frame.grid(row=2, column=0, sticky="ew", pady=(0, 8))
 
         self.generate_all_btn = ttk.Button(
             actions_frame, text="Generate All", command=self._on_generate_all
@@ -175,7 +204,7 @@ class TimetableApp:
 
         # -- Search -----------------------------------------------------
         search_frame = ttk.Frame(root_frame)
-        search_frame.grid(row=2, column=0, sticky="ew", pady=(0, 4))
+        search_frame.grid(row=3, column=0, sticky="ew", pady=(0, 4))
         search_frame.columnconfigure(1, weight=1)
 
         ttk.Label(search_frame, text="Search Teacher:").grid(row=0, column=0, sticky="w")
@@ -186,7 +215,7 @@ class TimetableApp:
 
         # -- Teacher list -------------------------------------------------
         list_frame = ttk.Frame(root_frame)
-        list_frame.grid(row=3, column=0, sticky="nsew", pady=(0, 8))
+        list_frame.grid(row=4, column=0, sticky="nsew", pady=(0, 8))
         list_frame.columnconfigure(0, weight=1)
         list_frame.rowconfigure(0, weight=1)
 
@@ -202,11 +231,11 @@ class TimetableApp:
 
         # -- Progress + status --------------------------------------------
         self.progress = ttk.Progressbar(root_frame, mode="determinate")
-        self.progress.grid(row=4, column=0, sticky="ew", pady=(0, 4))
+        self.progress.grid(row=5, column=0, sticky="ew", pady=(0, 4))
 
         self.status_var = tk.StringVar(value="Select a master Excel workbook to begin.")
         ttk.Label(root_frame, textvariable=self.status_var, foreground="#555555").grid(
-            row=5, column=0, sticky="w"
+            row=6, column=0, sticky="w"
         )
 
     # ------------------------------------------------------------- helpers
@@ -217,6 +246,7 @@ class TimetableApp:
     def _set_busy(self, busy: bool) -> None:
         state = tk.DISABLED if busy else tk.NORMAL
         self.select_btn.config(state=state)
+        self.select_output_btn.config(state=state)
         self.open_output_btn.config(state=state)
         if busy:
             self._set_generation_enabled(False)
@@ -256,7 +286,7 @@ class TimetableApp:
             return
 
         self.master_path = Path(path_str)
-        self.output_dir = self.master_path.parent / "Output"
+        self._refresh_output_dir()
         self.master_label_var.set(self.master_path.name)
         self.timetables = {}
         self.all_teacher_names = []
@@ -269,6 +299,29 @@ class TimetableApp:
         self.progress.start(10)
 
         threading.Thread(target=self._load_workbook_worker, args=(self.master_path,), daemon=True).start()
+
+    def _on_select_output_dir(self) -> None:
+        directory = filedialog.askdirectory(title="Select Output Folder")
+        if not directory:
+            return
+        self.output_base_dir = Path(directory)
+        self._refresh_output_dir()
+
+    def _refresh_output_dir(self) -> None:
+        """Recompute self.output_dir as <base>/TimeTableGenerator/Output.
+
+        <base> is the folder explicitly chosen via "Select Output
+        Folder...", or the master workbook's folder if none was chosen.
+        """
+        base = self.output_base_dir or (self.master_path.parent if self.master_path else None)
+        if base is None:
+            self.output_dir = None
+            self.output_label_var.set("Default: saved next to the workbook")
+            return
+
+        self.output_dir = base / OUTPUT_ROOT_DIR_NAME / OUTPUT_SUBDIR_NAME
+        source = "Chosen" if self.output_base_dir else "Default"
+        self.output_label_var.set(f"{source}: {self.output_dir}")
 
     def _load_workbook_worker(self, path: Path) -> None:
         try:
