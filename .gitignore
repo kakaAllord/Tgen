@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+Output/
+tests/_test_output/
+build/
+dist/
+*.msi
+*.wixobj
+*.wixpdb
+obj/
