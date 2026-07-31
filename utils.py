@@ -4,6 +4,9 @@ from __future__ import annotations
 
 import re
 
+#: Institution name printed at the top of every exported timetable.
+INSTITUTION_NAME = "KOROGWE DVTC"
+
 #: Cell text values that must be ignored when extracting lessons.
 #: Matched case-insensitively after collapsing whitespace/punctuation.
 IGNORED_CELL_KEYWORDS: frozenset[str] = frozenset(

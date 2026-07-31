@@ -11,7 +11,7 @@ from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
 from models import TeacherTimetable
-from utils import sanitize_filename
+from utils import INSTITUTION_NAME, sanitize_filename
 
 logger = logging.getLogger(__name__)
 
@@ -36,7 +36,8 @@ def export_teacher_timetable(timetable: TeacherTimetable, output_dir: Path) -> P
 
     styles = getSampleStyleSheet()
     elements = [
-        Paragraph(f"{timetable.teacher} - Timetable", styles["Title"]),
+        Paragraph(INSTITUTION_NAME, styles["Title"]),
+        Paragraph(f"{timetable.teacher} - Timetable", styles["Heading2"]),
         Spacer(1, 12),
     ]
 
@@ -52,12 +53,12 @@ def export_teacher_timetable(timetable: TeacherTimetable, output_dir: Path) -> P
     cell_style = ParagraphStyle("TimetableCell", parent=styles["Normal"], fontSize=8, leading=10)
     day_style = ParagraphStyle("TimetableDay", parent=cell_style, fontName="Helvetica-Bold")
 
-    header_row = ["DAY / TIME", *timetable.time_slots]
+    header_row = ["TIME / DAY", *timetable.days]
     table_data = [[Paragraph(text, header_style) for text in header_row]]
-    for day in timetable.days:
-        row = [Paragraph(day, day_style)]
+    for slot in timetable.time_slots:
+        row = [Paragraph(slot, day_style)]
         row.extend(
-            Paragraph(timetable.cell(day, slot) or "", cell_style) for slot in timetable.time_slots
+            Paragraph(timetable.cell(day, slot) or "", cell_style) for day in timetable.days
         )
         table_data.append(row)
 

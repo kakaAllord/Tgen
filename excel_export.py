@@ -10,7 +10,7 @@ from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 
 from models import TeacherTimetable
-from utils import sanitize_filename
+from utils import INSTITUTION_NAME, sanitize_filename
 
 logger = logging.getLogger(__name__)
 
@@ -32,30 +32,40 @@ def export_teacher_timetable(timetable: TeacherTimetable, output_dir: Path) -> P
     sheet = workbook.active
     sheet.title = "Timetable"
 
-    n_cols = len(timetable.time_slots) + 1
-    header_row = 2
+    n_cols = len(timetable.days) + 1
+    institution_row = 1
+    title_row = 2
+    header_row = 3
 
-    sheet.merge_cells(start_row=1, start_column=1, end_row=1, end_column=max(n_cols, 1))
-    title_cell = sheet.cell(row=1, column=1, value=f"{timetable.teacher} - Timetable")
+    sheet.merge_cells(
+        start_row=institution_row, start_column=1, end_row=institution_row, end_column=max(n_cols, 1)
+    )
+    institution_cell = sheet.cell(row=institution_row, column=1, value=INSTITUTION_NAME)
+    institution_cell.font = _TITLE_FONT
+    institution_cell.alignment = _CENTER
+    sheet.row_dimensions[institution_row].height = 26
+
+    sheet.merge_cells(start_row=title_row, start_column=1, end_row=title_row, end_column=max(n_cols, 1))
+    title_cell = sheet.cell(row=title_row, column=1, value=f"{timetable.teacher} - Timetable")
     title_cell.font = _TITLE_FONT
     title_cell.alignment = _CENTER
-    sheet.row_dimensions[1].height = 26
+    sheet.row_dimensions[title_row].height = 22
 
-    sheet.cell(row=header_row, column=1, value="DAY / TIME")
-    for col_idx, time_slot in enumerate(timetable.time_slots, start=2):
-        sheet.cell(row=header_row, column=col_idx, value=time_slot)
+    sheet.cell(row=header_row, column=1, value="TIME / DAY")
+    for col_idx, day in enumerate(timetable.days, start=2):
+        sheet.cell(row=header_row, column=col_idx, value=day)
     for cell in sheet[header_row]:
         cell.font = _HEADER_FONT
         cell.fill = _HEADER_FILL
         cell.alignment = _CENTER
         cell.border = _BORDER
 
-    for row_idx, day in enumerate(timetable.days, start=header_row + 1):
-        day_cell = sheet.cell(row=row_idx, column=1, value=day)
-        day_cell.font = _DAY_FONT
-        day_cell.alignment = _LEFT
-        day_cell.border = _BORDER
-        for col_idx, time_slot in enumerate(timetable.time_slots, start=2):
+    for row_idx, time_slot in enumerate(timetable.time_slots, start=header_row + 1):
+        time_cell = sheet.cell(row=row_idx, column=1, value=time_slot)
+        time_cell.font = _DAY_FONT
+        time_cell.alignment = _LEFT
+        time_cell.border = _BORDER
+        for col_idx, day in enumerate(timetable.days, start=2):
             cell = sheet.cell(row=row_idx, column=col_idx, value=timetable.cell(day, time_slot))
             cell.alignment = _CENTER
             cell.border = _BORDER
