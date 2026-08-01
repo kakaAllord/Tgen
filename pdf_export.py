@@ -15,7 +15,6 @@ from utils import INSTITUTION_NAME, fit_row_heights, sanitize_filename
 
 logger = logging.getLogger(__name__)
 
-_PAGE_SIZE = landscape(A4)
 _MARGIN = 24
 _HEADER_ROW_HEIGHT = 26.0
 _MIN_DATA_ROW_HEIGHT = 18.0
@@ -23,14 +22,20 @@ _MAX_DATA_ROW_HEIGHT = 70.0
 _BOTTOM_PADDING = 16.0
 
 
-def export_teacher_timetable(timetable: TeacherTimetable, output_dir: Path) -> Path:
-    """Write one teacher's timetable to ``output_dir``, overwriting any existing file."""
+def export_teacher_timetable(
+    timetable: TeacherTimetable, output_dir: Path, orientation: str = "landscape"
+) -> Path:
+    """Write one teacher's timetable to ``output_dir``, overwriting any existing file.
+
+    ``orientation`` is ``"landscape"`` (default) or ``"portrait"``.
+    """
     output_dir.mkdir(parents=True, exist_ok=True)
     path = output_dir / f"{sanitize_filename(timetable.teacher)}.pdf"
+    page_size = A4 if orientation == "portrait" else landscape(A4)
 
     doc = SimpleDocTemplate(
         str(path),
-        pagesize=_PAGE_SIZE,
+        pagesize=page_size,
         leftMargin=_MARGIN,
         rightMargin=_MARGIN,
         topMargin=_MARGIN,
@@ -39,7 +44,7 @@ def export_teacher_timetable(timetable: TeacherTimetable, output_dir: Path) -> P
     )
 
     styles = getSampleStyleSheet()
-    available_width = _PAGE_SIZE[0] - 2 * _MARGIN
+    available_width = page_size[0] - 2 * _MARGIN
     institution_para = Paragraph(INSTITUTION_NAME, styles["Title"])
     teacher_para = Paragraph(f"{timetable.teacher} - Timetable", styles["Heading2"])
     header_spacer = Spacer(1, 12)
@@ -71,10 +76,10 @@ def export_teacher_timetable(timetable: TeacherTimetable, output_dir: Path) -> P
     other_col_width = (available_width - day_col_width) / max(n_cols - 1, 1)
     col_widths = [day_col_width] + [other_col_width] * (n_cols - 1)
 
-    _, institution_h = institution_para.wrap(available_width, _PAGE_SIZE[1])
-    _, teacher_h = teacher_para.wrap(available_width, _PAGE_SIZE[1])
+    _, institution_h = institution_para.wrap(available_width, page_size[1])
+    _, teacher_h = teacher_para.wrap(available_width, page_size[1])
     used_height = institution_h + teacher_h + header_spacer.height + _BOTTOM_PADDING
-    available_table_height = _PAGE_SIZE[1] - 2 * _MARGIN - used_height
+    available_table_height = page_size[1] - 2 * _MARGIN - used_height
     data_row_height = fit_row_heights(
         n_data_rows=len(timetable.time_slots),
         available_height=available_table_height,

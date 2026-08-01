@@ -19,10 +19,17 @@ def group_by_teacher(lessons: list[Lesson]) -> dict[str, list[Lesson]]:
 
 
 def build_teacher_timetables(lessons: list[Lesson]) -> dict[str, TeacherTimetable]:
-    """Build one :class:`TeacherTimetable` per teacher found in ``lessons``."""
+    """Build one :class:`TeacherTimetable` per teacher found in ``lessons``.
+
+    Every timetable shares the same day/time-slot axes - the full set drawn
+    from all lessons across all teachers/levels - so a teacher's free periods
+    show up as blank cells instead of the row or column disappearing.
+    """
     grouped = group_by_teacher(lessons)
+    days = sorted({lesson.day for lesson in lessons}, key=weekday_sort_key)
+    time_slots = sorted({lesson.time for lesson in lessons}, key=time_sort_key)
     timetables = {
-        teacher: _build_timetable(teacher, teacher_lessons)
+        teacher: _build_timetable(teacher, teacher_lessons, days, time_slots)
         for teacher, teacher_lessons in grouped.items()
     }
     logger.info("Built timetables for %d teacher(s)", len(timetables))
@@ -34,10 +41,9 @@ def list_teacher_names(lessons: list[Lesson]) -> list[str]:
     return sorted({lesson.teacher for lesson in lessons}, key=str.casefold)
 
 
-def _build_timetable(teacher: str, lessons: list[Lesson]) -> TeacherTimetable:
-    days = sorted({lesson.day for lesson in lessons}, key=weekday_sort_key)
-    time_slots = sorted({lesson.time for lesson in lessons}, key=time_sort_key)
-
+def _build_timetable(
+    teacher: str, lessons: list[Lesson], days: list[str], time_slots: list[str]
+) -> TeacherTimetable:
     grid: dict[str, dict[str, str]] = {day: {slot: "" for slot in time_slots} for day in days}
     for lesson in lessons:
         entry = f"{lesson.subject} ({lesson.level})"
