@@ -11,12 +11,16 @@ from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
 from models import TeacherTimetable
-from utils import INSTITUTION_NAME, sanitize_filename
+from utils import INSTITUTION_NAME, fit_row_heights, sanitize_filename
 
 logger = logging.getLogger(__name__)
 
 _PAGE_SIZE = landscape(A4)
 _MARGIN = 24
+_HEADER_ROW_HEIGHT = 26.0
+_MIN_DATA_ROW_HEIGHT = 18.0
+_MAX_DATA_ROW_HEIGHT = 70.0
+_BOTTOM_PADDING = 16.0
 
 
 def export_teacher_timetable(timetable: TeacherTimetable, output_dir: Path) -> Path:
@@ -35,11 +39,11 @@ def export_teacher_timetable(timetable: TeacherTimetable, output_dir: Path) -> P
     )
 
     styles = getSampleStyleSheet()
-    elements = [
-        Paragraph(INSTITUTION_NAME, styles["Title"]),
-        Paragraph(f"{timetable.teacher} - Timetable", styles["Heading2"]),
-        Spacer(1, 12),
-    ]
+    available_width = _PAGE_SIZE[0] - 2 * _MARGIN
+    institution_para = Paragraph(INSTITUTION_NAME, styles["Title"])
+    teacher_para = Paragraph(f"{timetable.teacher} - Timetable", styles["Heading2"])
+    header_spacer = Spacer(1, 12)
+    elements = [institution_para, teacher_para, header_spacer]
 
     if not timetable.days or not timetable.time_slots:
         elements.append(Paragraph("No lessons found for this teacher.", styles["Normal"]))
@@ -63,12 +67,24 @@ def export_teacher_timetable(timetable: TeacherTimetable, output_dir: Path) -> P
         table_data.append(row)
 
     n_cols = len(header_row)
-    available_width = _PAGE_SIZE[0] - 2 * _MARGIN
     day_col_width = max(70.0, available_width * 0.12)
     other_col_width = (available_width - day_col_width) / max(n_cols - 1, 1)
     col_widths = [day_col_width] + [other_col_width] * (n_cols - 1)
 
-    table = Table(table_data, colWidths=col_widths, repeatRows=1)
+    _, institution_h = institution_para.wrap(available_width, _PAGE_SIZE[1])
+    _, teacher_h = teacher_para.wrap(available_width, _PAGE_SIZE[1])
+    used_height = institution_h + teacher_h + header_spacer.height + _BOTTOM_PADDING
+    available_table_height = _PAGE_SIZE[1] - 2 * _MARGIN - used_height
+    data_row_height = fit_row_heights(
+        n_data_rows=len(timetable.time_slots),
+        available_height=available_table_height,
+        header_height=_HEADER_ROW_HEIGHT,
+        min_data_row_height=_MIN_DATA_ROW_HEIGHT,
+        max_data_row_height=_MAX_DATA_ROW_HEIGHT,
+    )
+    row_heights = [_HEADER_ROW_HEIGHT] + [data_row_height] * len(timetable.time_slots)
+
+    table = Table(table_data, colWidths=col_widths, rowHeights=row_heights, repeatRows=1)
     table.setStyle(
         TableStyle(
             [
