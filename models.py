@@ -62,14 +62,25 @@ class SheetGrid:
 
 @dataclass(slots=True)
 class TeacherTimetable:
-    """A single teacher's generated timetable, ready for export."""
+    """A single teacher's generated timetable, ready for export.
+
+    ``row_activities`` marks time slots (e.g. TEA BREAK) that are the same
+    whole-school activity across every day - exporters render those as one
+    continuous cell spanning all day columns instead of repeating the label
+    per day with dividers between them.
+    """
 
     teacher: str
     days: list[str]
     time_slots: list[str]
-    # grid[day][time_slot] -> cell text (may be empty string)
-    grid: dict[str, dict[str, str]] = field(default_factory=dict)
+    # grid[day][time_slot] -> lesson entries for that cell (usually 0 or 1;
+    # 2+ means a genuine double-booking, kept side by side rather than merged)
+    grid: dict[str, dict[str, list[str]]] = field(default_factory=dict)
     lessons: list[Lesson] = field(default_factory=list)
+    row_activities: dict[str, str] = field(default_factory=dict)
+
+    def cell_entries(self, day: str, time_slot: str) -> list[str]:
+        return self.grid.get(day, {}).get(time_slot, [])
 
     def cell(self, day: str, time_slot: str) -> str:
-        return self.grid.get(day, {}).get(time_slot, "")
+        return " / ".join(self.cell_entries(day, time_slot))

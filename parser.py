@@ -17,7 +17,14 @@ import logging
 import re
 
 from models import Activity, Lesson, SheetGrid
-from utils import TIME_DAY_MARKER, classify_activity, is_known_weekday, normalize_key, normalize_text
+from utils import (
+    TIME_DAY_MARKER,
+    classify_activity,
+    is_known_weekday,
+    is_placeholder_teacher,
+    normalize_key,
+    normalize_text,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -170,6 +177,11 @@ def _parse_data_row(
             continue
 
         subject, teacher = split_subject_teacher(text)
+        if is_placeholder_teacher(teacher):
+            # "Maths. TC", "Core- TC", etc. - the sheet never names a real
+            # teacher for this slot, so there's no one to attribute it to;
+            # drop it rather than inventing a fake "TC"/"Unknown" teacher.
+            continue
         lessons.append(
             Lesson(
                 level=level,

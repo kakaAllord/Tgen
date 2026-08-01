@@ -11,6 +11,8 @@ from utils import normalize_key, time_sort_key, weekday_sort_key
 
 logger = logging.getLogger(__name__)
 
+_PARADE_KEY = "PARADE"
+
 
 @dataclass(slots=True)
 class _GridInfo:
@@ -23,6 +25,21 @@ class _GridInfo:
     recurring: dict[str, str] = field(default_factory=dict)
     #: (day, time) -> label, applied only where the sheet actually wrote it
     one_off: dict[tuple[str, str], str] = field(default_factory=dict)
+    #: times where an actual lesson (for any teacher) occurs - used to tell
+    #: a genuinely empty PARADE-only slot from a real class.
+    lesson_times: set[str] = field(default_factory=set)
+
+    def dropped_slots(self) -> set[str]:
+        """Slots to leave out of the timetable entirely.
+
+        Only PARADE - unlike TEA BREAK, it isn't kept and relabelled, it's
+        dropped so the timetable starts from the first real lesson.
+        """
+        return {
+            time
+            for time, label in self.recurring.items()
+            if normalize_key(label) == _PARADE_KEY and time not in self.lesson_times
+        }
 
 
 def group_by_teacher(lessons: list[Lesson]) -> dict[str, list[Lesson]]:
@@ -66,7 +83,9 @@ def _build_grid_lookup(
 ) -> dict[tuple[str, ...], _GridInfo]:
     lookup: dict[tuple[str, ...], _GridInfo] = {}
     for lesson in lessons:
-        lookup.setdefault(lesson.time_grid, _GridInfo()).days.add(lesson.day)
+        info = lookup.setdefault(lesson.time_grid, _GridInfo())
+        info.days.add(lesson.day)
+        info.lesson_times.add(lesson.time)
     for activity in activities:
         info = lookup.setdefault(activity.time_grid, _GridInfo())
         info.days.add(activity.day)
@@ -86,14 +105,21 @@ def _build_timetable(
     days = sorted(
         {day for grid in grids_used for day in grid_lookup[grid].days}, key=weekday_sort_key
     )
-    time_slots = sorted({slot for grid in grids_used for slot in grid}, key=time_sort_key)
+    dropped = {slot for grid in grids_used for slot in grid_lookup[grid].dropped_slots()}
+    time_slots = sorted(
+        {slot for grid in grids_used for slot in grid if slot not in dropped}, key=time_sort_key
+    )
 
-    grid: dict[str, dict[str, str]] = {day: {slot: "" for slot in time_slots} for day in days}
+    grid: dict[str, dict[str, list[str]]] = {
+        day: {slot: [] for slot in time_slots} for day in days
+    }
 
     by_cell: dict[tuple[str, str], list[Lesson]] = {}
     for lesson in lessons:
         by_cell.setdefault((lesson.day, lesson.time), []).append(lesson)
     for (day, time), cell_lessons in by_cell.items():
+        if time not in grid.get(day, {}):
+            continue
         grid[day][time] = _render_cell(teacher, day, time, cell_lessons)
 
     for time_grid in grids_used:
@@ -106,11 +132,13 @@ def _build_timetable(
                 if day not in days or grid[day][slot]:
                     continue
                 if recurring_label:
-                    grid[day][slot] = recurring_label
+                    grid[day][slot] = [recurring_label]
                     continue
                 one_off_label = info.one_off.get((day, slot))
                 if one_off_label:
-                    grid[day][slot] = one_off_label
+                    grid[day][slot] = [one_off_label]
+
+    row_activities = _find_row_activities(days, time_slots, grid)
 
     sorted_lessons = sorted(
         lessons, key=lambda lesson: (weekday_sort_key(lesson.day), time_sort_key(lesson.time))
@@ -121,19 +149,39 @@ def _build_timetable(
         time_slots=time_slots,
         grid=grid,
         lessons=sorted_lessons,
+        row_activities=row_activities,
     )
 
 
-def _render_cell(teacher: str, day: str, time: str, cell_lessons: list[Lesson]) -> str:
-    """Render every lesson a teacher has at one (day, time) into one cell.
+def _find_row_activities(
+    days: list[str], time_slots: list[str], grid: dict[str, dict[str, list[str]]]
+) -> dict[str, str]:
+    """Times where every day shows the exact same single whole-school
+    activity (e.g. TEA BREAK) - these render as one continuous cell across
+    all day columns instead of repeating the label per day.
+    """
+    row_activities: dict[str, str] = {}
+    if not days:
+        return row_activities
+    for slot in time_slots:
+        entries_per_day = [grid[day][slot] for day in days]
+        first = entries_per_day[0]
+        if len(first) == 1 and all(entries == first for entries in entries_per_day):
+            row_activities[slot] = first[0]
+    return row_activities
+
+
+def _render_cell(teacher: str, day: str, time: str, cell_lessons: list[Lesson]) -> list[str]:
+    """Render every lesson a teacher has at one (day, time) into cell entries.
 
     Several trade blocks in the same level often repeat the exact same
     general-subject lesson verbatim (one combined class taught to the whole
     level at once) - those collapse into a single entry under the plain
     level. A lesson unique to one trade block (e.g. a trade-specific
     practical) is labelled with that trade instead. Genuinely different
-    lessons landing in the same slot are a real double-booking and are kept
-    side by side with a logged warning.
+    lessons landing in the same slot are a real double-booking: both are
+    kept as separate entries (exporters render them in different colors)
+    rather than merged, and a warning is logged.
     """
     groups: dict[str, list[Lesson]] = {}
     order: list[str] = []
@@ -159,4 +207,4 @@ def _render_cell(teacher: str, day: str, time: str, cell_lessons: list[Lesson]) 
         logger.warning(
             "Timetable clash for %s on %s %s: %r", teacher, day, time, " / ".join(entries)
         )
-    return " / ".join(entries)
+    return entries

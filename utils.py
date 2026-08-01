@@ -36,6 +36,17 @@ ONE_OFF_ACTIVITY_KEYWORDS: frozenset[str] = frozenset(
     }
 )
 
+#: Teacher names that are really placeholders for "not yet assigned" in the
+#: source data (e.g. a cell reading "Maths. TC" or "Core- TC"), not real
+#: people. Lessons naming one of these are dropped entirely rather than
+#: showing up as a fake teacher in the app or in any exported file.
+PLACEHOLDER_TEACHER_KEYWORDS: frozenset[str] = frozenset({"TC", "UNKNOWN"})
+
+#: Print-safe, high-contrast colors (hex, no "#") used to tell apart two or
+#: more lessons double-booked into the same day/time cell. Chosen to stay
+#: distinguishable by lightness alone if printed in grayscale, not just hue.
+CLASH_COLORS: tuple[str, ...] = ("C00000", "002060", "375623", "5B2C6F")
+
 #: Header marker that identifies the row holding time-slot column labels.
 #: Stored already-normalized (see `normalize_key`) since it is always compared
 #: against normalized cell text.
@@ -84,6 +95,11 @@ def classify_activity(value: object) -> tuple[str, bool] | None:
     if key in ONE_OFF_ACTIVITY_KEYWORDS:
         return (text, False)
     return None
+
+
+def is_placeholder_teacher(teacher: str) -> bool:
+    """True for "TC" / "Unknown" style stand-ins that aren't a real teacher."""
+    return normalize_key(teacher) in PLACEHOLDER_TEACHER_KEYWORDS
 
 
 def is_known_weekday(day: str) -> bool:
