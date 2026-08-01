@@ -7,9 +7,12 @@ import re
 #: Institution name printed at the top of every exported timetable.
 INSTITUTION_NAME = "KOROGWE DVTC"
 
-#: Cell text values that must be ignored when extracting lessons.
-#: Matched case-insensitively after collapsing whitespace/punctuation.
-IGNORED_CELL_KEYWORDS: frozenset[str] = frozenset(
+#: Whole-school, non-teaching activities that recur at the same time every
+#: day - the source workbook typically only writes the label on one day
+#: (usually Monday) and leaves the same column blank on the rest, trusting
+#: the reader to infer it repeats daily. Matched case-insensitively after
+#: collapsing whitespace/punctuation.
+RECURRING_ACTIVITY_KEYWORDS: frozenset[str] = frozenset(
     {
         "PARADE",
         "TEA BREAK",
@@ -18,7 +21,18 @@ IGNORED_CELL_KEYWORDS: frozenset[str] = frozenset(
         "BREAK",
         "LUNCH",
         "LUNCH BREAK",
+    }
+)
+
+#: Whole-school, non-teaching activities tied to a specific day (e.g. a
+#: Friday-only assembly slot) - rendered exactly where the sheet places them,
+#: never inferred onto other days.
+ONE_OFF_ACTIVITY_KEYWORDS: frozenset[str] = frozenset(
+    {
         "GAMES",
+        "CLEANLINESS",
+        "PRAYER SESSION",
+        "SPORTS",
     }
 )
 
@@ -54,12 +68,27 @@ def normalize_key(value: object) -> str:
     return re.sub(r"[\s\-_/]+", " ", text).strip()
 
 
-def is_ignored_cell(value: object) -> bool:
-    """True for empty cells or cells matching an ignored keyword (PARADE, TEA BREAK, ...)."""
+def classify_activity(value: object) -> tuple[str, bool] | None:
+    """Classify a non-blank cell as a whole-school activity, if it is one.
+
+    Returns ``(label, recurring)`` where ``recurring`` is True for a daily
+    activity (TEA BREAK, PARADE, ...) and False for a day-specific one
+    (CLEANLINESS, SPORTS, ...); returns ``None`` for an ordinary lesson cell.
+    """
     text = normalize_text(value)
     if not text:
-        return True
-    return normalize_key(text) in IGNORED_CELL_KEYWORDS
+        return None
+    key = normalize_key(text)
+    if key in RECURRING_ACTIVITY_KEYWORDS:
+        return (text, True)
+    if key in ONE_OFF_ACTIVITY_KEYWORDS:
+        return (text, False)
+    return None
+
+
+def is_known_weekday(day: str) -> bool:
+    """True if ``day`` matches (a prefix of) a known weekday name."""
+    return weekday_sort_key(day)[0] != len(WEEKDAY_ORDER)
 
 
 def weekday_sort_key(day: str) -> tuple[int, str]:
@@ -76,16 +105,27 @@ def weekday_sort_key(day: str) -> tuple[int, str]:
     return (len(WEEKDAY_ORDER), key)
 
 
-_TIME_START_RE = re.compile(r"(\d{1,2})[:.](\d{2})")
+_TIME_START_RE = re.compile(r"(\d{1,2})[:.](\d{2})\s*(AM|PM)?", re.IGNORECASE)
 
 
 def time_sort_key(time_slot: str) -> tuple[int, str]:
-    """Sort key ordering time-slot labels by their first HH:MM occurrence."""
+    """Sort key ordering time-slot labels by their first HH:MM occurrence.
+
+    Handles a trailing AM/PM (e.g. "01.30PM-02.15PM") by converting to 24-hour
+    time - without this, "01.30PM" sorts as if it were 1:30 AM, landing
+    afternoon periods before the morning ones.
+    """
     match = _TIME_START_RE.search(time_slot)
-    if match:
-        hour, minute = int(match.group(1)), int(match.group(2))
-        return (hour * 60 + minute, time_slot)
-    return (24 * 60, time_slot)
+    if not match:
+        return (24 * 60, time_slot)
+    hour, minute, meridiem = int(match.group(1)), int(match.group(2)), match.group(3)
+    if meridiem:
+        meridiem = meridiem.upper()
+        if meridiem == "PM" and hour != 12:
+            hour += 12
+        elif meridiem == "AM" and hour == 12:
+            hour = 0
+    return (hour * 60 + minute, time_slot)
 
 
 def fit_row_heights(

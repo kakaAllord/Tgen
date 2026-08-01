@@ -1,11 +1,14 @@
 """Extracts structured lessons (Level, Day, Time, Subject, Teacher) from
 resolved sheet grids produced by :mod:`reader`.
 
-Each worksheet is one Level. A row whose text contains "TIME/DAY" holds the
-time-slot column headers; the first column holds weekdays. Every non-empty,
-non-break lesson cell is expected to contain "Subject - Teacher" text (the
-separator and spacing vary across the source workbook, e.g. "EET- Mr.
-Mathias", "TD-Mr. Marobo", "CA&CAD Mr. Mbelwa").
+Each worksheet can hold several trade-specific timetable blocks stacked one
+after another (e.g. "LEVEL I" contains a separate Mon-Fri block for EL,
+DSCT, MB, ...), each introduced by its own row containing "TIME/DAY". A row
+whose text contains "TIME/DAY" holds the time-slot column headers; the first
+column holds weekdays. Every non-empty lesson cell is expected to contain
+"Subject - Teacher" text (the separator and spacing vary across the source
+workbook, e.g. "EET- Mr. Mathias", "TD-Mr. Marobo", "CA&CAD Mr. Mbelwa"), or
+be a whole-school activity (PARADE, TEA BREAK, ...) with no teacher.
 """
 
 from __future__ import annotations
@@ -13,8 +16,8 @@ from __future__ import annotations
 import logging
 import re
 
-from models import Lesson, SheetGrid
-from utils import TIME_DAY_MARKER, is_ignored_cell, normalize_key, normalize_text
+from models import Activity, Lesson, SheetGrid
+from utils import TIME_DAY_MARKER, classify_activity, is_known_weekday, normalize_key, normalize_text
 
 logger = logging.getLogger(__name__)
 
@@ -24,37 +27,67 @@ _TITLE_RE = re.compile(
     re.IGNORECASE,
 )
 
+#: Matches a trailing parenthesized short code on a block's title row, e.g.
+#: "TIME TABLE 2026 ELECTRICAL INSTALATION (EL)" -> "EL".
+_TRADE_CODE_RE = re.compile(r"\(([A-Za-z0-9&]{1,12})\)\s*$")
+#: How many rows above a "TIME/DAY" header row to search for a title row.
+_TITLE_SEARCH_DEPTH = 5
 
-def parse_workbook(sheets: list[SheetGrid]) -> list[Lesson]:
-    """Parse every sheet (level) into a flat list of lessons."""
+
+def parse_workbook(sheets: list[SheetGrid]) -> tuple[list[Lesson], list[Activity]]:
+    """Parse every sheet (level) into flat lists of lessons and activities."""
     lessons: list[Lesson] = []
+    activities: list[Activity] = []
     for sheet in sheets:
-        lessons.extend(parse_sheet(sheet))
-    logger.info("Parsed %d lesson(s) from %d sheet(s)", len(lessons), len(sheets))
-    return lessons
+        sheet_lessons, sheet_activities = parse_sheet(sheet)
+        lessons.extend(sheet_lessons)
+        activities.extend(sheet_activities)
+    logger.info(
+        "Parsed %d lesson(s) and %d activity slot(s) from %d sheet(s)",
+        len(lessons),
+        len(activities),
+        len(sheets),
+    )
+    return lessons, activities
 
 
-def parse_sheet(sheet: SheetGrid) -> list[Lesson]:
-    """Parse a single Level's worksheet grid into lessons."""
+def parse_sheet(sheet: SheetGrid) -> tuple[list[Lesson], list[Activity]]:
+    """Parse a single worksheet's (possibly multi-block) grid."""
     rows = sheet.rows
     header_row_indices = _find_header_rows(rows)
     if not header_row_indices:
         logger.warning(
             "Sheet %r has no row containing %r; skipping.", sheet.name, TIME_DAY_MARKER
         )
-        return []
+        return [], []
 
     lessons: list[Lesson] = []
+    activities: list[Activity] = []
     for block_idx, header_row_idx in enumerate(header_row_indices):
         day_col, time_columns = _map_time_columns(rows[header_row_idx])
+        time_grid = tuple(label for _, label in time_columns)
+        trade = _detect_trade_code(rows, header_row_idx)
         block_end = (
             header_row_indices[block_idx + 1]
             if block_idx + 1 < len(header_row_indices)
             else len(rows)
         )
         for row_idx in range(header_row_idx + 1, block_end):
-            lessons.extend(_parse_data_row(sheet.name, rows[row_idx], day_col, time_columns))
-    return lessons
+            row = rows[row_idx]
+            day = normalize_text(row[day_col]) if day_col < len(row) else ""
+            if not day or TIME_DAY_MARKER in normalize_key(day) or not is_known_weekday(day):
+                # A block's real data is always an unbroken run of weekday
+                # rows right after its header - the first row that isn't one
+                # (typically a blank spacer, or the next block's title
+                # banner bleeding into range(header_row_idx + 1, block_end))
+                # marks the end of this block, not a row to skip over.
+                break
+            row_lessons, row_activities = _parse_data_row(
+                sheet.name, trade, day, row, time_columns, time_grid
+            )
+            lessons.extend(row_lessons)
+            activities.extend(row_activities)
+    return lessons, activities
 
 
 def _find_header_rows(rows: list[list[str]]) -> list[int]:
@@ -64,6 +97,29 @@ def _find_header_rows(rows: list[list[str]]) -> list[int]:
         if any(TIME_DAY_MARKER in normalize_key(cell) for cell in row):
             indices.append(idx)
     return indices
+
+
+def _detect_trade_code(rows: list[list[str]], header_row_idx: int) -> str | None:
+    """Find the block's trade code from a title row above the header, e.g.
+    "TIME TABLE 2026 ELECTRICAL INSTALATION (EL)" -> "EL". ``None`` if no
+    such title is found nearby.
+
+    Kept separate from ``level`` (the sheet name) rather than merged into one
+    label at parse time: whether a lesson should be shown under its precise
+    trade code or the coarser level depends on whether it turns out to be
+    unique to this block or shared identically across every trade block in
+    the level (a combined class) - a decision only ``teacher_generator`` can
+    make, once every block has been parsed.
+    """
+    for offset in range(1, _TITLE_SEARCH_DEPTH + 1):
+        row_idx = header_row_idx - offset
+        if row_idx < 0:
+            break
+        for cell in rows[row_idx]:
+            match = _TRADE_CODE_RE.search(normalize_text(cell))
+            if match:
+                return match.group(1).upper()
+    return None
 
 
 def _map_time_columns(header_row: list[str]) -> tuple[int, list[tuple[int, str]]]:
@@ -84,31 +140,49 @@ def _map_time_columns(header_row: list[str]) -> tuple[int, list[tuple[int, str]]
 
 def _parse_data_row(
     level: str,
+    trade: str | None,
+    day: str,
     row: list[str],
-    day_col: int,
     time_columns: list[tuple[int, str]],
-) -> list[Lesson]:
-    day = normalize_text(row[day_col]) if day_col < len(row) else ""
-    if not day or TIME_DAY_MARKER in normalize_key(day):
-        return []
-
+    time_grid: tuple[str, ...],
+) -> tuple[list[Lesson], list[Activity]]:
     lessons: list[Lesson] = []
+    activities: list[Activity] = []
     for col_idx, time_label in time_columns:
         cell_text = row[col_idx] if col_idx < len(row) else ""
-        if is_ignored_cell(cell_text):
+        text = normalize_text(cell_text)
+        if not text:
             continue
-        subject, teacher = split_subject_teacher(cell_text)
+
+        activity = classify_activity(text)
+        if activity is not None:
+            label, recurring = activity
+            activities.append(
+                Activity(
+                    level=level,
+                    day=day,
+                    time=time_label,
+                    label=label,
+                    time_grid=time_grid,
+                    recurring=recurring,
+                )
+            )
+            continue
+
+        subject, teacher = split_subject_teacher(text)
         lessons.append(
             Lesson(
                 level=level,
+                trade=trade,
                 day=day,
                 time=time_label,
                 subject=subject,
                 teacher=teacher,
-                raw_text=cell_text,
+                raw_text=text,
+                time_grid=time_grid,
             )
         )
-    return lessons
+    return lessons, activities
 
 
 def split_subject_teacher(cell_text: str) -> tuple[str, str]:
@@ -139,7 +213,11 @@ def split_subject_teacher(cell_text: str) -> tuple[str, str]:
 
 
 def _standardize_teacher(teacher_text: str) -> str:
-    """Normalize salutation casing/spacing, e.g. "mr.mathias" -> "Mr. Mathias"."""
+    """Normalize salutation casing/spacing and name casing, e.g.
+    "mr.mathias" -> "Mr. Mathias", so the same teacher spelled with
+    inconsistent case in different blocks (e.g. "Mr. isack" vs "Mr. Isack")
+    always collapses to one entry instead of splitting into two.
+    """
     match = _TITLE_RE.match(teacher_text)
     if not match:
         return teacher_text.strip()
@@ -150,4 +228,9 @@ def _standardize_teacher(teacher_text: str) -> str:
     separator = " " if title_cased.lower() in {"miss", "madam", "madame"} else ". "
     if not rest:
         return f"{title_cased}{'.' if separator == '. ' else ''}".strip()
-    return f"{title_cased}{separator}{rest}"
+    # Capitalize fully-lowercase words (e.g. "isack" -> "Isack"); leave
+    # anything already mixed/upper case alone (e.g. "Wickleaf", "AW" initials).
+    normalized_rest = " ".join(
+        word.capitalize() if word.islower() else word for word in rest.split()
+    )
+    return f"{title_cased}{separator}{normalized_rest}"

@@ -58,7 +58,7 @@ def main() -> int:
     sheets = read_workbook(sample_path)
     check(len(sheets) == 2, f"read 2 sheets (got {len(sheets)})")
 
-    lessons = parse_workbook(sheets)
+    lessons, activities = parse_workbook(sheets)
     check(len(lessons) > 0, f"parsed at least one lesson (got {len(lessons)})")
 
     unknown_lessons = [lesson for lesson in lessons if lesson.teacher == "Unknown"]
@@ -77,7 +77,7 @@ def main() -> int:
         f"all expected teachers detected (got {teacher_names})",
     )
 
-    timetables = build_teacher_timetables(lessons)
+    timetables = build_teacher_timetables(lessons, activities)
     check(len(timetables) == len(teacher_names), "one timetable built per teacher")
 
     # 4. Export and verify files land where expected.

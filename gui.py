@@ -326,8 +326,8 @@ class TimetableApp:
     def _load_workbook_worker(self, path: Path) -> None:
         try:
             sheets = read_workbook(path)
-            lessons = parse_workbook(sheets)
-            timetables = build_teacher_timetables(lessons)
+            lessons, activities = parse_workbook(sheets)
+            timetables = build_teacher_timetables(lessons, activities)
             self._queue.put(("loaded", (lessons, timetables)))
         except Exception as exc:  # noqa: BLE001 - surfaced to the user via the GUI
             logger.exception("Failed to load workbook %s", path)
