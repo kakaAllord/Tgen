@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
+from xml.sax.saxutils import escape
 
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4, landscape
@@ -45,8 +46,8 @@ def export_teacher_timetable(
 
     styles = getSampleStyleSheet()
     available_width = page_size[0] - 2 * _MARGIN
-    institution_para = Paragraph(INSTITUTION_NAME, styles["Title"])
-    teacher_para = Paragraph(f"{timetable.teacher} - Timetable", styles["Heading2"])
+    institution_para = Paragraph(escape(INSTITUTION_NAME), styles["Title"])
+    teacher_para = Paragraph(f"{escape(timetable.teacher)} - Timetable", styles["Heading2"])
     header_spacer = Spacer(1, 12)
     elements = [institution_para, teacher_para, header_spacer]
 
@@ -63,11 +64,11 @@ def export_teacher_timetable(
     day_style = ParagraphStyle("TimetableDay", parent=cell_style, fontName="Helvetica-Bold")
 
     header_row = ["TIME / DAY", *timetable.days]
-    table_data = [[Paragraph(text, header_style) for text in header_row]]
+    table_data = [[Paragraph(escape(text), header_style) for text in header_row]]
     for slot in timetable.time_slots:
-        row = [Paragraph(slot, day_style)]
+        row = [Paragraph(escape(slot), day_style)]
         row.extend(
-            Paragraph(timetable.cell(day, slot) or "", cell_style) for day in timetable.days
+            Paragraph(escape(timetable.cell(day, slot)), cell_style) for day in timetable.days
         )
         table_data.append(row)
 
