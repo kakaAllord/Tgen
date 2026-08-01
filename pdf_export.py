@@ -1,4 +1,4 @@
-"""Exports per-teacher timetables to styled, landscape .pdf files."""
+"""Exports per-teacher timetables to styled .pdf files (portrait by default)."""
 
 from __future__ import annotations
 
@@ -23,11 +23,11 @@ _BOTTOM_PADDING = 16.0
 
 
 def export_teacher_timetable(
-    timetable: TeacherTimetable, output_dir: Path, orientation: str = "landscape"
+    timetable: TeacherTimetable, output_dir: Path, orientation: str = "portrait"
 ) -> Path:
     """Write one teacher's timetable to ``output_dir``, overwriting any existing file.
 
-    ``orientation`` is ``"landscape"`` (default) or ``"portrait"``.
+    ``orientation`` is ``"portrait"`` (default) or ``"landscape"``.
     """
     output_dir.mkdir(parents=True, exist_ok=True)
     path = output_dir / f"{sanitize_filename(timetable.teacher)}.pdf"
